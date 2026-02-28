@@ -1,0 +1,66 @@
+[2026-02-28 18:40:20.215] [NeuroVitals] Received request. Payload size: 4298418 bytes
+[2026-02-28 18:40:20.219] [NeuroVitals] Temp video stored: C:\Users\Lenovo\AppData\Local\Temp\tmpx6ucwq0f.webm
+[2026-02-28 18:40:20.221] [NeuroVitals] [STEP 1] Starting frame extraction...
+[2026-02-28 18:40:23.123] [NeuroVitals] [STEP 1] Extracted 396 frames total.
+[2026-02-28 18:40:23.124] [NeuroVitals] [STEP 2] Initializing ROI extraction...
+[2026-02-28 18:40:23.124] [NeuroVitals] [STEP 2] Processing 300 frames for ROI...
+[2026-02-28 18:40:23.125] [NeuroVitals] [STEP 2] ROI Frame 0/300... Buffer size: 0
+[2026-02-28 18:40:24.097] [NeuroVitals] [STEP 2] ROI Frame 20/300... Buffer size: 20
+[2026-02-28 18:40:24.850] [NeuroVitals] [STEP 2] ROI Frame 40/300... Buffer size: 40
+[2026-02-28 18:40:25.721] [NeuroVitals] [STEP 2] ROI Frame 60/300... Buffer size: 60
+[2026-02-28 18:40:26.527] [NeuroVitals] [STEP 2] ROI Frame 80/300... Buffer size: 80
+[2026-02-28 18:40:27.784] [NeuroVitals] [STEP 2] ROI Frame 100/300... Buffer size: 100
+[2026-02-28 18:40:30.818] [NeuroVitals] [STEP 2] ROI Frame 120/300... Buffer size: 120
+[2026-02-28 18:40:32.937] [NeuroVitals] [STEP 2] ROI Frame 140/300... Buffer size: 140
+[2026-02-28 18:40:34.273] [NeuroVitals] [STEP 2] ROI Frame 160/300... Buffer size: 160
+[2026-02-28 18:40:36.274] [NeuroVitals] [STEP 2] ROI Frame 180/300... Buffer size: 180
+[2026-02-28 18:40:37.997] [NeuroVitals] [STEP 2] ROI Frame 200/300... Buffer size: 200
+[2026-02-28 18:40:40.152] [NeuroVitals] [STEP 2] ROI Frame 220/300... Buffer size: 220
+[2026-02-28 18:40:41.747] [NeuroVitals] [STEP 2] ROI Frame 240/300... Buffer size: 240
+[2026-02-28 18:40:44.288] [NeuroVitals] [STEP 2] ROI Frame 260/300... Buffer size: 260
+[2026-02-28 18:40:46.647] [NeuroVitals] [STEP 2] ROI Frame 280/300... Buffer size: 280
+[2026-02-28 18:40:48.422] [NeuroVitals] [STEP 2] ROI extraction complete. Valid faces: 300
+[2026-02-28 18:40:48.424] [NeuroVitals] [STEP 3] Running CHROM signal extraction...
+[2026-02-28 18:40:48.817] [NeuroVitals] [STEP 3] Signal extracted. Samples: 300
+[2026-02-28 18:40:48.823] [NeuroVitals] [STEP 4] Computing 10 clinical features...
+[2026-02-28 18:40:48.844] [NeuroVitals] [STEP 4] RAW Features: {'heart_rate_bpm': 59.34065934065934, 'rmssd': 0.6211548384528076, 'sdnn': 0.37379435820009677, 'lf_hf_ratio': 0.0, 'rsa': 5.0480087146191525e-08, 'ptv': 0.3696867278902056, 'spectral_entropy': 2.4356193972373243, 'sympathetic_index': 0.0, 'signal_quality_index': np.float64(0.029794334577428486), 'stress_reactivity': 0.0}
+[2026-02-28 18:40:48.862] [NeuroVitals] [STEP 4] Heart Rate Detected: 59.34 BPM
+[2026-02-28 18:40:48.876] [NeuroVitals] [STEP 5] Running Bayesian Inference Engine...
+[2026-02-28 18:40:48.881] [NeuroVitals] [STEP 5] Inference Result: Low
+[2026-02-28 18:40:48.883] [NeuroVitals] [STEP 6] Running Identity Verification...
+[2026-02-28 18:40:48.891] [NeuroVitals] [STEP 6] Blink-based Liveness: 0.40
+[2026-02-28 18:40:57.304] [NeuroVitals] [STEP 8] Waveform Authenticity Score: 0.49
+[2026-02-28 18:40:57.305] [NeuroVitals] [MOOD] Current State: Calm
+[2026-02-28 18:46:06.100] [NeuroVitals] Received request. Payload size: 4284833 bytes
+[2026-02-28 18:46:06.103] [NeuroVitals] Temp video stored: C:\Users\Lenovo\AppData\Local\Temp\tmpvz1kmjlb.webm
+[2026-02-28 18:46:06.103] [NeuroVitals] [STEP 1] Starting frame extraction...
+[2026-02-28 18:46:08.292] [NeuroVitals] [STEP 1] Extracted 400 frames total.
+[2026-02-28 18:46:08.295] [NeuroVitals] [STEP 2] Initializing ROI extraction...
+[2026-02-28 18:46:08.297] [NeuroVitals] [STEP 2] Processing 300 frames for ROI...
+[2026-02-28 18:46:08.297] [NeuroVitals] [STEP 2] ROI Frame 0/300... Buffer size: 0
+[2026-02-28 18:46:09.306] [NeuroVitals] [STEP 2] ROI Frame 20/300... Buffer size: 20
+[2026-02-28 18:46:10.191] [NeuroVitals] [STEP 2] ROI Frame 40/300... Buffer size: 40
+[2026-02-28 18:46:10.966] [NeuroVitals] [STEP 2] ROI Frame 60/300... Buffer size: 60
+[2026-02-28 18:46:11.750] [NeuroVitals] [STEP 2] ROI Frame 80/300... Buffer size: 80
+[2026-02-28 18:46:12.988] [NeuroVitals] [STEP 2] ROI Frame 100/300... Buffer size: 100
+[2026-02-28 18:46:14.970] [NeuroVitals] [STEP 2] ROI Frame 120/300... Buffer size: 120
+[2026-02-28 18:46:15.982] [NeuroVitals] [STEP 2] ROI Frame 140/300... Buffer size: 140
+[2026-02-28 18:46:16.790] [NeuroVitals] [STEP 2] ROI Frame 160/300... Buffer size: 160
+[2026-02-28 18:46:17.666] [NeuroVitals] [STEP 2] ROI Frame 180/300... Buffer size: 180
+[2026-02-28 18:46:18.429] [NeuroVitals] [STEP 2] ROI Frame 200/300... Buffer size: 200
+[2026-02-28 18:46:19.543] [NeuroVitals] [STEP 2] ROI Frame 220/300... Buffer size: 220
+[2026-02-28 18:46:20.878] [NeuroVitals] [STEP 2] ROI Frame 240/300... Buffer size: 240
+[2026-02-28 18:46:21.739] [NeuroVitals] [STEP 2] ROI Frame 260/300... Buffer size: 260
+[2026-02-28 18:46:22.702] [NeuroVitals] [STEP 2] ROI Frame 280/300... Buffer size: 280
+[2026-02-28 18:46:23.543] [NeuroVitals] [STEP 2] ROI extraction complete. Valid faces: 300
+[2026-02-28 18:46:23.543] [NeuroVitals] [STEP 3] Running CHROM signal extraction...
+[2026-02-28 18:46:23.647] [NeuroVitals] [STEP 3] Signal extracted. Samples: 300
+[2026-02-28 18:46:23.655] [NeuroVitals] [STEP 4] Computing 10 clinical features...
+[2026-02-28 18:46:23.674] [NeuroVitals] [STEP 4] RAW Features: {'heart_rate_bpm': 65.32258064516128, 'rmssd': 0.3651483716701107, 'sdnn': 0.34161020310318235, 'lf_hf_ratio': 0.0, 'rsa': 1.583638664099838e-07, 'ptv': 0.3719143340236259, 'spectral_entropy': 2.4310810265496263, 'sympathetic_index': 0.0, 'signal_quality_index': np.float64(0.01645636006872393), 'stress_reactivity': 0.0}
+[2026-02-28 18:46:23.681] [NeuroVitals] [STEP 4] Heart Rate Detected: 65.32 BPM
+[2026-02-28 18:46:23.683] [NeuroVitals] [STEP 5] Running Bayesian Inference Engine...
+[2026-02-28 18:46:23.686] [NeuroVitals] [STEP 5] Inference Result: Low
+[2026-02-28 18:46:23.697] [NeuroVitals] [STEP 6] Running Identity Verification...
+[2026-02-28 18:46:23.741] [NeuroVitals] [STEP 6] Blink-based Liveness: 0.40
+[2026-02-28 18:46:27.028] [NeuroVitals] [STEP 8] Waveform Authenticity Score: 0.50
+[2026-02-28 18:46:27.029] [NeuroVitals] [MOOD] Current State: Calm
