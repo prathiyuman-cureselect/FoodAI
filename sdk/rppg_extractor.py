@@ -62,9 +62,24 @@ class RPPGExtractor:
             # Ensure length matches original projection
             S_denoised = S_denoised[:len(S)]
 
+            # SpO2 Ratios (AC/DC)
+            # Use standard deviation as AC proxy and mean as DC proxy
+            r_ac = np.std(r)
+            r_dc = np.mean(r) + 1e-12
+            b_ac = np.std(b)
+            b_dc = np.mean(b) + 1e-12
+            
+            r_ratio = r_ac / r_dc
+            b_ratio = b_ac / b_dc
+
             # Detrend and filter
             S_filtered = bandpass_filter(S_denoised, fs=self.fs)
-            return S_filtered
+            
+            return {
+                "pulse_signal": S_filtered,
+                "r_ratio": float(r_ratio),
+                "b_ratio": float(b_ratio)
+            }
         except Exception as e:
             print(f"[NeuroVitals] [RPPG_EXTRACTOR] ERROR in extract: {e}")
             return np.array([])

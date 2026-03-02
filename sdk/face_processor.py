@@ -7,6 +7,8 @@ from typing import Optional
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
+from insightface.app import FaceAnalysis
+
 
 # ── model asset download helper ──────────────────────────────────────────
 import os, urllib.request
@@ -61,6 +63,40 @@ class FaceProcessor:
             print(f"[NeuroVitals] [FaceProcessor] FATAL: Landmarker creation failed: {e}")
             raise e
 
+        print("[NeuroVitals] [FaceProcessor] Initializing InsightFace for gender detection...")
+        try:
+            self._demographics_app = FaceAnalysis(name='buffalo_l', root=_MODEL_DIR, providers=['CPUExecutionProvider'])
+            self._demographics_app.prepare(ctx_id=-1, det_size=(640, 640))
+            print("[NeuroVitals] [FaceProcessor] InsightFace initialized successfully.")
+        except Exception as e:
+            print(f"[NeuroVitals] [FaceProcessor] WARNING: InsightFace failed to initialize: {e}")
+            self._demographics_app = None
+
+    def estimate_demographics(self, frame: np.ndarray):
+        """Estimate age and gender using InsightFace."""
+        if self._demographics_app is None:
+            return None
+        
+        try:
+            faces = self._demographics_app.get(frame)
+            if not faces:
+                return None
+            
+            # Use the first face detected
+            face = faces[0]
+            gender_val = "male" if face.gender == 1 else "female"
+            age_val = int(face.age)
+            
+            return {
+                "gender": gender_val,
+                "age": age_val,
+                "confidence": float(face.det_score)
+            }
+        except Exception as e:
+            print(f"[NeuroVitals] [FaceProcessor] Demographic estimation error: {e}")
+            return None
+
+
     def extract_roi_with_landmarks(self, frame: np.ndarray):
         """
         Unified method: Returns both the cropping-optimized Forehead ROI 
@@ -101,6 +137,7 @@ class FaceProcessor:
         except Exception as e:
             print(f"[NeuroVitals] [FACE_PROCESSOR] ERROR in extract_roi_with_landmarks: {e}")
             return None, None
+
 
     def close(self):
         self._landmarker.close()

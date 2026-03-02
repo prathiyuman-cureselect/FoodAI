@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from FACE.sdk.feature_engineer import (
+from sdk.feature_engineer import (
     detect_peaks,
     compute_heart_rate,
     compute_rr_intervals,

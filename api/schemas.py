@@ -39,6 +39,7 @@ class BayesianResult(BaseModel):
 
 
 class ClinicalMetricSet(BaseModel):
+    # --- Core Vitals ---
     heart_rate_bpm: Optional[float] = None
     rmssd: Optional[float] = None
     sdnn: Optional[float] = None
@@ -48,6 +49,47 @@ class ClinicalMetricSet(BaseModel):
     spectral_entropy: Optional[float] = None
     sympathetic_index: Optional[float] = None
     stress_reactivity: Optional[float] = None
+    blood_pressure_sys: Optional[float] = None
+    blood_pressure_dia: Optional[float] = None
+    spo2: Optional[float] = None
+    
+    # --- Hemodynamic Expansion ---
+    mean_arterial_pressure: Optional[float] = None
+    cardiac_workload: Optional[float] = None
+    pulse_pressure: Optional[float] = None
+    ascvd_risk: Optional[str] = "Low"
+    high_bp_risk: Optional[float] = 0.0
+    
+    # --- Respiratory Expansion ---
+    breathing_rate: Optional[float] = None
+    pulse_respiration_quotient: Optional[float] = None  # PRQ
+    
+    # --- Metabolic / Hematic (AI Estimated Risks) ---
+    hemoglobin_estimated: Optional[float] = None       # hb
+    hba1c_estimated: Optional[float] = None            # hbA1c
+    glucose_risk: Optional[float] = 0.0                # High Fasting Glucose Risk
+    cholesterol_risk: Optional[float] = 0.0            # High Total Cholesterol risk
+    anemia_risk: Optional[float] = 0.0                 # Low hb risk
+    hba1c_risk: Optional[float] = 0.0                  # High HbA1c risk
+    
+    # --- Wellness & Safety ---
+    heart_age: Optional[int] = None
+    wellness_score: Optional[float] = 0.0
+    fall_risk: Optional[float] = 0.0
+    activity_index: Optional[float] = 0.0              # Movement / Low Activity
+    
+    hrv_raw: Optional[Dict[str, List[float]]] = None
+
+
+class ClinicalTrendSet(BaseModel):
+    """Time-series data for clinical visualization."""
+    heart_rate: List[float] = Field(default_factory=list)
+    blood_pressure_sys: List[float] = Field(default_factory=list)
+    blood_pressure_dia: List[float] = Field(default_factory=list)
+    spo2: List[float] = Field(default_factory=list)
+    breathing_signal: List[float] = Field(default_factory=list)
+    stress_index: List[float] = Field(default_factory=list)
+    timestamps: List[float] = Field(default_factory=list)
 
 
 class MoodResult(BaseModel):
@@ -72,8 +114,23 @@ class AnalysisResponse(BaseModel):
     Mood: MoodResult
     BayesianPosteriors: BayesianResult = Field(default_factory=BayesianResult)
     ClinicalFeatures: ClinicalMetricSet = Field(default_factory=ClinicalMetricSet)
+    ClinicalTrends: Optional[ClinicalTrendSet] = None
     ConfidenceScore: float = 0.0
     DominantCondition: Optional[str] = None
+    DetectedGender: Optional[str] = None
+    DetectedAge: Optional[int] = None
+
+
+# ---------------------------------------------------------------------------
+# Gender Detection
+# ---------------------------------------------------------------------------
+
+class GenderDetectionResponse(BaseModel):
+    success: bool = False
+    gender: Optional[str] = None
+    age: Optional[int] = None
+    confidence: float = 0.0
+    message: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -117,3 +174,5 @@ class GovernanceReport(BaseModel):
     fairness: Optional[Dict] = None
     calibration: Optional[CalibrationResult] = None
     recommendation: str = "No action required"
+
+

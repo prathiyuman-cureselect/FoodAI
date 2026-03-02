@@ -30,32 +30,32 @@ import tempfile
 import traceback
 import numpy as np
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from FACE.sdk.face_processor import FaceProcessor, extract_frames_from_video
-from FACE.sdk.rppg_extractor import RPPGExtractor
-from FACE.sdk.feature_engineer import (
+from sdk.face_processor import FaceProcessor, extract_frames_from_video
+from sdk.rppg_extractor import RPPGExtractor
+from sdk.feature_engineer import (
     extract_all_features, detect_peaks, compute_sqi,
 )
-from FACE.sdk.anomaly_model import WaveformValidator
-from FACE.sdk.bayesian_engine import (
+from sdk.anomaly_model import WaveformValidator
+from sdk.bayesian_engine import (
     BayesianMentalHealthEngine, MoodInferenceEngine
 )
-from FACE.sdk.identity_verifier import (
+from sdk.identity_verifier import (
     EmbeddingModel, verify_identity, cosine_similarity, IdentityVerifier,
     compute_liveness_score,
 )
-from FACE.sdk.logger import (
+from sdk.logger import (
     configure_audit_logger, audit_analysis, audit_identity,
     audit_consent, audit_governance, audit_event,
 )
-from FACE.sdk.security import (
+from sdk.security import (
     generate_consent_token, verify_consent_token,
 )
-from FACE.sdk.governance import GovernanceMonitor
-from FACE.api.schemas import (
+from sdk.governance import GovernanceMonitor
+from api.schemas import (
     HealthResponse,
     AnalysisResponse,
     ExplainabilityDetail,
@@ -65,6 +65,8 @@ from FACE.api.schemas import (
     VerifyResponse,
     GovernanceReport,
     MoodResult,
+    GenderDetectionResponse,
+    ClinicalTrendSet,
 )
 
 
@@ -94,40 +96,26 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# ROBUST CORS MIDDLEWARE
-# Mirrors the request origin to satisfy browser 'null' checks
-from fastapi import Request, Response
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    # Mirror the request's origin EXACTLY (handles 'null' and protocol mismatches)
-    origin = request.headers.get("origin", "*")
-    
-    if request.method == "OPTIONS":
-        return Response(
-            status_code=204,
-            headers={
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Methods": "*",
-                "Access-Control-Allow-Headers": "*",
-                "Access-Control-Allow-Credentials": "true"
-            }
-        )
-    
-    try:
-        response = await call_next(request)
-    except Exception as e:
-        trace_log(f"[CORS_GATE] Unhandled exception in pipeline: {e}")
-        response = JSONResponse(
-            status_code=500,
-            content={"detail": f"Clinical Engine Failure: {str(e)}"}
-        )
-    
-    response.headers["Access-Control-Allow-Origin"] = origin
-    response.headers["Access-Control-Allow-Methods"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    err_msg = traceback.format_exc()
+    trace_log(f"[GLOBAL_FATAL] Unhandled exception:\n{err_msg}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Clinical Engine Internal Error: {str(exc)}",
+            "traceback": err_msg
+        }
+    )
 
 logger = configure_audit_logger()
 
@@ -154,11 +142,49 @@ async def root():
 
 
 # ---------------------------------------------------------------------------
+# POST /detect_gender — High-speed Automated Gender Identification
+# ---------------------------------------------------------------------------
+
+@app.post("/detect_gender", response_model=GenderDetectionResponse)
+async def detect_gender(file: UploadFile = File(...)):
+    """Endpoint for UI-layer automated gender identification (no age)."""
+    try:
+        contents = await file.read()
+        arr = np.frombuffer(contents, np.uint8)
+        import cv2
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Invalid image encoding")
+
+        result = _face_processor.estimate_demographics(frame)
+        if result:
+            return GenderDetectionResponse(
+                success=True,
+                gender=result["gender"],
+                age=result["age"],
+                confidence=result["confidence"],
+                message="Demographics identified successfully"
+            )
+        else:
+            return GenderDetectionResponse(success=False, message="No face detected or demographics failed")
+    except Exception as e:
+        trace_log(f"[NeuroVitals] [GENDER_DETECT] Error: {e}")
+        return GenderDetectionResponse(success=False, message=str(e))
+
+
+
+
+# ---------------------------------------------------------------------------
 # POST /analyze  — Full rPPG Analysis Pipeline
 # ---------------------------------------------------------------------------
 
 @app.post("/analyze", response_model=AnalysisResponse)
-def analyze_video(file: UploadFile = File(...)):
+def analyze_video(
+    file: UploadFile = File(...),
+    age: int = Form(35),
+    gender: str = Form("other")
+):
     """Accept a short video, run the full rPPG → Bayesian → SHAP pipeline.
     
     Using 'def' instead of 'async def' to offload this CPU-bound work
@@ -191,6 +217,34 @@ def analyze_video(file: UploadFile = File(...)):
         if not frames:
             trace_log("[NeuroVitals] [STEP 1] FATAL ERROR: extract_frames_from_video returned 0 frames.")
             raise HTTPException(status_code=400, detail="No frames found in video")
+
+        # --- 1.5 Automated Demographic Estimation (Consensus Voting) ---
+        if gender.lower() == "auto":
+            trace_log("[NeuroVitals] [STEP 1.5] Attempting temporal demographic consensus...")
+            # Sample 5 frames across the video for better accuracy
+            sample_indices = np.linspace(0, len(frames)-1, 5, dtype=int)
+            samples = []
+            
+            for idx in sample_indices:
+                res = _face_processor.estimate_demographics(frames[idx])
+                if res:
+                    samples.append(res)
+            
+            if samples:
+                # Majority vote for gender
+                genders = [s["gender"] for s in samples]
+                gender = max(set(genders), key=genders.count)
+                
+                # Median for age to reject outliers
+                ages = [s["age"] for s in samples]
+                age = int(np.median(ages))
+                
+                trace_log(f"[NeuroVitals] [STEP 1.5] Consensus Results -> Gender: {gender}, Age: {age} (from {len(samples)} samples)")
+            else:
+                trace_log("[NeuroVitals] [STEP 1.5] Demographic estimation failed, using defaults.")
+                gender = "other"
+                # Keep original age Form default if possible, or use 35
+
 
         # --- 2. Face ROI extraction & Landmark Collection ---
         trace_log("[NeuroVitals] [STEP 2] Initializing ROI extraction...")
@@ -235,12 +289,28 @@ def analyze_video(file: UploadFile = File(...)):
 
         # --- 3. rPPG signal extraction (CHROM) ---
         trace_log("[NeuroVitals] [STEP 3] Running CHROM signal extraction...")
-        signal = _rppg_extractor.extract(roi_buffer)
+        extraction_res = _rppg_extractor.extract(roi_buffer)
+        
+        if isinstance(extraction_res, dict):
+            signal = extraction_res.get("pulse_signal", np.array([]))
+            r_ratio = extraction_res.get("r_ratio")
+            b_ratio = extraction_res.get("b_ratio")
+        else:
+            # Fallback for old RPPGExtractor versions
+            signal = extraction_res
+            r_ratio, b_ratio = None, None
+
         trace_log(f"[NeuroVitals] [STEP 3] Signal extracted. Samples: {len(signal)}")
 
         # --- 4. Full feature extraction ---
-        trace_log("[NeuroVitals] [STEP 4] Computing 10 clinical features...")
-        features = extract_all_features(signal, fs=30.0)
+        trace_log("[NeuroVitals] [STEP 4] Computing clinical features (Morphology + Multi-channel)...")
+        features = extract_all_features(
+            signal, 
+            fs=30.0, 
+            r_ratio=r_ratio, 
+            b_ratio=b_ratio,
+            age=age
+        )
         
         # Clean up features: convert NaN to 0.0 for easier consumption if preferred, 
         # but here we log them to see what's actually happening.
@@ -254,8 +324,8 @@ def analyze_video(file: UploadFile = File(...)):
             trace_log(f"[NeuroVitals] [STEP 4] Heart Rate Detected: {hr_val:.2f} BPM")
 
         # --- 5. Bayesian mental health inference ---
-        trace_log("[NeuroVitals] [STEP 5] Running Bayesian Inference Engine...")
-        inference = _bayesian_engine.full_inference(features)
+        trace_log(f"[NeuroVitals] [STEP 5] Running Bayesian Inference (Age: {age}, Gender: {gender})...")
+        inference = _bayesian_engine.full_inference(features, age=age, gender=gender)
         
         posteriors = inference["posteriors"]
         risk_class = inference["risk_class"]
@@ -295,13 +365,13 @@ def analyze_video(file: UploadFile = File(...)):
         trace_log(f"[NeuroVitals] [STEP 8] Waveform Authenticity Score: {authenticity:.2f}")
 
         # --- 9. Clinical Result Mapping & Explainability ---
-        inference = _bayesian_engine.full_inference(features)
+        inference = _bayesian_engine.full_inference(features, age=age, gender=gender)
         posteriors = inference["posteriors"]
         risk_class = inference["risk_class"]
         explainability_data = inference["explainability"]
 
         # --- 9.5 Mood Inference ---
-        mood_data = _mood_engine.infer_mood(features)
+        mood_data = _mood_engine.infer_mood(features, age=age, gender=gender)
         trace_log(f"[NeuroVitals] [MOOD] Current State: {mood_data['MoodState']}")
 
         # --- 10. Confidence based on SQI ---
@@ -312,7 +382,11 @@ def analyze_video(file: UploadFile = File(...)):
         processed_features = {
             k: (v if not (isinstance(v, (float, np.float64)) and np.isnan(v)) else 0.0)
             for k, v in features.items()
+            if not isinstance(v, dict)
         }
+        # Explicitly add hrv_raw back if it exists
+        if "hrv_raw" in features:
+            processed_features["hrv_raw"] = features["hrv_raw"]
 
         # Final Liveness is a blend of facial consistency + waveform authenticity
         final_liveness = float(np.clip(0.7 * liveness_score + 0.3 * authenticity, 0.0, 1.0))
@@ -329,8 +403,11 @@ def analyze_video(file: UploadFile = File(...)):
             Mood=MoodResult(**mood_data),
             BayesianPosteriors=BayesianResult(**posteriors),
             ClinicalFeatures=ClinicalMetricSet(**processed_features),
+            ClinicalTrends=ClinicalTrendSet(**features.get("trends", {})),
             ConfidenceScore=float(np.clip(sqi * 0.95, 0.0, 1.0)),
             DominantCondition=max(posteriors, key=posteriors.get) if posteriors else "Unknown",
+            DetectedGender=gender,
+            DetectedAge=age,
         )
 
         audit_analysis(logger, {

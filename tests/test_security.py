@@ -3,7 +3,7 @@ import os
 import tempfile
 import pytest
 
-from FACE.sdk.security import (
+from sdk.security import (
     generate_key,
     encrypt_blob,
     decrypt_blob,

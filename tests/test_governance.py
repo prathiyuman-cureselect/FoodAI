@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from FACE.sdk.governance import (
+from sdk.governance import (
     ks_drift_test,
     multi_feature_drift,
     demographic_parity,

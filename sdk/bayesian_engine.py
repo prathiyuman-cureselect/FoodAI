@@ -131,8 +131,38 @@ class BayesianMentalHealthEngine:
         risk_class = engine.classify(posteriors)
     """
 
-    def __init__(self, priors: Optional[Dict[str, float]] = None):
-        self.priors = dict(priors or _DEFAULT_PRIORS)
+    def __init__(self, priors: Optional[Dict[str, float]] = None, age: int = 35, gender: str = "other"):
+        self.age = age
+        self.gender = gender
+        self.priors = self._get_adjusted_priors(priors or _DEFAULT_PRIORS)
+
+    def _get_adjusted_priors(self, base_priors: Dict[str, float]) -> Dict[str, float]:
+        """Adjusts base priors based on demographic prevalence data."""
+        priors = dict(base_priors)
+        
+        # Heuristic adjustment for age/gender prevalence shifts
+        # (Example: Higher anxiety/depression prevalence in younger cohorts in recent datasets)
+        if self.age < 25:
+            priors["anxiety"] *= 1.2
+            priors["depression"] *= 1.1
+        elif self.age > 65:
+            priors["depression"] *= 1.1 # Geriatric depression factor
+            
+        if self.gender == "female":
+            priors["anxiety"] *= 1.15
+            
+        # Ensure they stay as valid probabilities
+        return {k: np.clip(v, 0.01, 0.9) for k, v in priors.items()}
+
+    def _get_age_adjusted_threshold(self, base_midpoint: float, feat_name: str) -> float:
+        """Scales feature thresholds based on age-related physiological decline."""
+        if feat_name in ["rmssd", "sdnn", "rsa"]:
+            # HRV naturally declines with age. 
+            # A 20ms RMSSD is 'normal' at 70 but 'low' at 20.
+            # Scaling factor: reduce midpoint as age increases
+            age_factor = max(0.5, 1.0 - (self.age - 25) * 0.01) 
+            return base_midpoint * age_factor
+        return base_midpoint
 
     # ----- public API ------
 
@@ -154,7 +184,10 @@ class BayesianMentalHealthEngine:
                 value = features.get(feat_name)
                 if value is None or math.isnan(value):
                     continue
-                likelihood = _sigmoid(value, midpoint, steepness)
+                
+                # Apply age-adjusted threshold
+                adjusted_midpoint = self._get_age_adjusted_threshold(midpoint, feat_name)
+                likelihood = _sigmoid(value, adjusted_midpoint, steepness)
                 posterior = bayesian_update(posterior, likelihood)
             posteriors[condition] = posterior
         return posteriors
@@ -209,8 +242,12 @@ class BayesianMentalHealthEngine:
             
         return explanation
 
-    def full_inference(self, features: Dict[str, float]) -> Dict[str, Any]:
+    def full_inference(self, features: Dict[str, float], age: Optional[int] = None, gender: Optional[str] = None) -> Dict[str, Any]:
         """Run update + classify + explain and return a combined result dict."""
+        if age is not None: self.age = age
+        if gender is not None: self.gender = gender
+        self.priors = self._get_adjusted_priors(_DEFAULT_PRIORS)
+
         try:
             posteriors = self.update(features)
             risk_class = self.classify(posteriors)
@@ -246,11 +283,15 @@ class MoodInferenceEngine:
     Valence ~ RMSSD & RSA (High Vagal Tone -> Positive Valence)
     """
 
-    def infer_mood(self, features: Dict[str, float]) -> Dict[str, Any]:
+    def infer_mood(self, features: Dict[str, float], age: int = 35, gender: str = "other") -> Dict[str, Any]:
         rmssd = features.get("rmssd", 0.04)
         lfhf = features.get("lf_hf_ratio", 1.5)
         hr = features.get("heart_rate_bpm", 70)
         entropy = features.get("spectral_entropy", 2.5)
+
+        # Baselines adjust with age
+        # HR baseline: ~220-age is max, but resting HR also shifts slightly
+        hr_baseline = 70 + (age - 30) * 0.1 
 
         # 1. Estimate Arousal [0-1]
         # Driven by sympathetic dominance (LF/HF) and tachycardia (HR)

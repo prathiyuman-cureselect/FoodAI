@@ -2,7 +2,7 @@
 import math
 import pytest
 
-from FACE.sdk.bayesian_engine import (
+from sdk.bayesian_engine import (
     bayesian_update,
     BayesianMentalHealthEngine,
 )
