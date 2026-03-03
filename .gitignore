@@ -47,3 +47,6 @@ Thumbs.db
 # Temp files
 *.tmp
 *.bak
+
+# Test files
+live_test.html
