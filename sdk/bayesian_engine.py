@@ -289,20 +289,25 @@ class MoodInferenceEngine:
         hr = features.get("heart_rate_bpm", 70)
         entropy = features.get("spectral_entropy", 2.5)
 
+        if rmssd is None or math.isnan(rmssd): rmssd = 0.04
+        if lfhf is None or math.isnan(lfhf): lfhf = 1.5
+        if hr is None or math.isnan(hr): hr = 70.0
+        if entropy is None or math.isnan(entropy): entropy = 2.5
+
         # Baselines adjust with age
         # HR baseline: ~220-age is max, but resting HR also shifts slightly
         hr_baseline = 70 + (age - 30) * 0.1 
 
         # 1. Estimate Arousal [0-1]
         # Driven by sympathetic dominance (LF/HF) and tachycardia (HR)
-        arousal_lfhf = np.clip((lfhf - 1.0) / 4.0, 0, 1)
-        arousal_hr = np.clip((hr - 60) / 60, 0, 1)
+        arousal_lfhf = np.clip((lfhf - 0.5) / 3.0, 0, 1)
+        arousal_hr = np.clip((hr - 50) / 70, 0, 1)
         arousal = float(0.6 * arousal_lfhf + 0.4 * arousal_hr)
 
         # 2. Estimate Valence [0-1]
         # Driven by vagal tone (RMSSD) and signal stability (low entropy)
-        valence_hrv = np.clip(rmssd / 0.1, 0, 1)
-        valence_stability = 1.0 - np.clip((entropy - 2.0) / 3.0, 0, 1)
+        valence_hrv = np.clip(rmssd / 0.08, 0, 1)
+        valence_stability = 1.0 - np.clip((entropy - 1.5) / 3.5, 0, 1)
         valence = float(0.7 * valence_hrv + 0.3 * valence_stability)
 
         # 3. Classify State

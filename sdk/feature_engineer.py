@@ -197,14 +197,19 @@ def compute_sdnn(peaks: np.ndarray, fs: float = 30.0) -> float:
 def _band_power(freqs: np.ndarray, psd: np.ndarray,
                 low: float, high: float) -> float:
     """Integrate PSD within [low, high] Hz band."""
-    idx = np.where((freqs >= low) & (freqs <= high))
+    idx = np.where((freqs >= low) & (freqs <= high))[0]
+    if len(idx) == 0:
+        return 0.0
+    if len(idx) == 1:
+        df = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
+        return float(psd[idx[0]] * df)
+        
     # Use np.trapezoid if available (Numpy 2.0+), else np.trapz
     trapz_func = getattr(np, "trapezoid", getattr(np, "trapz", None))
     if trapz_func is None:
          # Fallback to a simple manual trapezoidal rule if both are missing
          y = psd[idx]
          x = freqs[idx]
-         if len(x) < 2: return 0.0
          return float(np.sum((y[1:] + y[:-1]) * (x[1:] - x[:-1]) / 2.0))
     return float(trapz_func(psd[idx], freqs[idx]))
 
@@ -215,7 +220,8 @@ def compute_lf_hf_ratio(signal: np.ndarray, fs: float = 30.0) -> float:
     nperseg = min(256, n) if n >= 64 else n
     if n < 32: return float("nan")
     
-    freqs, psd = welch(signal, fs=fs, nperseg=nperseg)
+    nfft = max(nperseg, 1024)
+    freqs, psd = welch(signal, fs=fs, nperseg=nperseg, nfft=nfft)
     lf = _band_power(freqs, psd, 0.04, 0.15)
     hf = _band_power(freqs, psd, 0.15, 0.40)
     if hf < 1e-12:
@@ -229,7 +235,8 @@ def compute_rsa(signal: np.ndarray, fs: float = 30.0) -> float:
     nperseg = min(256, n) if n >= 64 else n
     if n < 32: return float("nan")
     
-    freqs, psd = welch(signal, fs=fs, nperseg=nperseg)
+    nfft = max(nperseg, 1024)
+    freqs, psd = welch(signal, fs=fs, nperseg=nperseg, nfft=nfft)
     return _band_power(freqs, psd, 0.15, 0.40)
 
 
@@ -239,7 +246,8 @@ def compute_sympathetic_index(signal: np.ndarray, fs: float = 30.0) -> float:
     nperseg = min(256, n) if n >= 64 else n
     if n < 32: return float("nan")
     
-    freqs, psd = welch(signal, fs=fs, nperseg=nperseg)
+    nfft = max(nperseg, 1024)
+    freqs, psd = welch(signal, fs=fs, nperseg=nperseg, nfft=nfft)
     lf = _band_power(freqs, psd, 0.04, 0.15)
     hf = _band_power(freqs, psd, 0.15, 0.40)
     total = lf + hf
