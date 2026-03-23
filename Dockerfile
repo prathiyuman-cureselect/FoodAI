@@ -4,10 +4,11 @@ FROM python:3.11-slim AS builder
 WORKDIR /app
 
 # System deps for MediaPipe (OpenGL ES), OpenCV, and InsightFace
+# Debian Bookworm uses libgl1/libgles2/libegl1 (not the old -mesa suffixed names)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libgles2-mesa \
-    libegl1-mesa \
+    libgl1 \
+    libgles2 \
+    libegl1 \
     libglib2.0-0 \
     libsm6 \
     libxrender1 \
@@ -29,9 +30,9 @@ WORKDIR /app
 
 # Same system libs needed at runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libgles2-mesa \
-    libegl1-mesa \
+    libgl1 \
+    libgles2 \
+    libegl1 \
     libglib2.0-0 \
     libsm6 \
     libxrender1 \
