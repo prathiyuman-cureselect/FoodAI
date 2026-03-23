@@ -27,18 +27,30 @@ class RPPGExtractor:
         arr = np.stack([cv2_mean_rgb(a) for a in roi_buffer], axis=0)
         return arr
 
-    def extract(self, roi_buffer: List[np.ndarray]) -> np.ndarray:
+    def extract(self, roi_buffer: List[np.ndarray]) -> dict:
         """
-        Extract the raw rPPG signal (CHROM) and apply Wavelet Denoising.
+        Legacy method: Extract the raw rPPG signal (CHROM) from a list of raw ROIs.
+        Still supported but deprecated for large videos on memory-constrained systems.
+        """
+        arr = self._rgb_means(roi_buffer)
+        return self.extract_from_means(arr)
+
+    def extract_from_means(self, rgb_means: np.ndarray) -> dict:
+        """
+        Extraction from pre-computed RGB means (N x 3). 
+        This is the memory-efficient path.
         """
         try:
-            if len(roi_buffer) < 10:
-                return np.array([])
+            if len(rgb_means) < 10:
+                return {
+                    "pulse_signal": np.array([]),
+                    "r_ratio": 0.0,
+                    "b_ratio": 0.0
+                }
 
-            arr = self._rgb_means(roi_buffer)
-            r = arr[:, 2]
-            g = arr[:, 1]
-            b = arr[:, 0]
+            r = rgb_means[:, 2]
+            g = rgb_means[:, 1]
+            b = rgb_means[:, 0]
 
             # CHROM method transforms
             X = 3 * r - 2 * g
@@ -63,7 +75,6 @@ class RPPGExtractor:
             S_denoised = S_denoised[:len(S)]
 
             # SpO2 Ratios (AC/DC)
-            # Use standard deviation as AC proxy and mean as DC proxy
             r_ac = np.std(r)
             r_dc = np.mean(r) + 1e-12
             b_ac = np.std(b)
@@ -81,8 +92,12 @@ class RPPGExtractor:
                 "b_ratio": float(b_ratio)
             }
         except Exception as e:
-            print(f"[NeuroVitals] [RPPG_EXTRACTOR] ERROR in extract: {e}")
-            return np.array([])
+            print(f"[NeuroVitals] [RPPG_EXTRACTOR] ERROR in extract_from_means: {e}")
+            return {
+                "pulse_signal": np.array([]),
+                "r_ratio": 0.0,
+                "b_ratio": 0.0
+            }
 
 
 def cv2_mean_rgb(frame: np.ndarray):

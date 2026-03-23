@@ -34,7 +34,7 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from sdk.face_processor import FaceProcessor, extract_frames_from_video
+from sdk.face_processor import FaceProcessor
 from sdk.rppg_extractor import RPPGExtractor
 from sdk.feature_engineer import (
     extract_all_features, detect_peaks, compute_sqi,
@@ -98,7 +98,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://aifoodanalysis.onrender.com",
+        "https://food-ai-analysis.vercel.app", # Potential other frontend
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,14 +127,63 @@ logger = configure_audit_logger()
 # In-memory stores (replace with database in production)
 _enrolled_embeddings: dict = {}       # subject_id → np.ndarray
 
-# Global singletons for performance — INITIALIZED AT STARTUP
-_face_processor = FaceProcessor()
-_rppg_extractor = RPPGExtractor(fs=30.0)
-_bayesian_engine = BayesianMentalHealthEngine()
-_mood_engine = MoodInferenceEngine()
-_waveform_validator = WaveformValidator()
-_identity_verifier = IdentityVerifier()
-_governance_monitor = GovernanceMonitor()
+# --- Global Engine Instances (Lazy Loaded) ---
+_face_processor = None
+_rppg_extractor = None
+_bayesian_engine = None
+_mood_engine = None
+_waveform_validator = None
+_identity_verifier = None
+_governance_monitor = None
+
+def get_face_processor():
+    global _face_processor
+    if _face_processor is None:
+        from sdk.face_processor import FaceProcessor
+        _face_processor = FaceProcessor()
+    return _face_processor
+
+def get_rppg_extractor():
+    global _rppg_extractor
+    if _rppg_extractor is None:
+        from sdk.rppg_extractor import RPPGExtractor
+        _rppg_extractor = RPPGExtractor(fs=30.0)
+    return _rppg_extractor
+
+def get_bayesian_engine():
+    global _bayesian_engine
+    if _bayesian_engine is None:
+        from sdk.bayesian_engine import BayesianMentalHealthEngine
+        _bayesian_engine = BayesianMentalHealthEngine()
+    return _bayesian_engine
+
+def get_mood_engine():
+    global _mood_engine
+    if _mood_engine is None:
+        from sdk.mood_inference_engine import MoodInferenceEngine
+        _mood_engine = MoodInferenceEngine()
+    return _mood_engine
+
+def get_waveform_validator():
+    global _waveform_validator
+    if _waveform_validator is None:
+        from sdk.anomaly_model import WaveformValidator
+        _waveform_validator = WaveformValidator()
+    return _waveform_validator
+
+def get_identity_verifier():
+    global _identity_verifier
+    if _identity_verifier is None:
+        from sdk.identity_verifier import IdentityVerifier
+        _identity_verifier = IdentityVerifier()
+    return _identity_verifier
+
+def get_governance_monitor():
+    global _governance_monitor
+    if _governance_monitor is None:
+        from sdk.governance import GovernanceMonitor
+        _governance_monitor = GovernanceMonitor()
+    return _governance_monitor
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +211,7 @@ async def detect_gender(file: UploadFile = File(...)):
         if frame is None:
             raise HTTPException(status_code=400, detail="Invalid image encoding")
 
-        result = _face_processor.estimate_demographics(frame)
+        result = get_face_processor().estimate_demographics(frame)
         if result:
             return GenderDetectionResponse(
                 success=True,
@@ -209,101 +263,107 @@ def analyze_video(
             trace_log(f"[NeuroVitals] ERROR writing temp file: {e}")
             raise HTTPException(status_code=500, detail="Failed to store uploaded video")
 
-        # --- 1. Frame extraction ---
-        trace_log("[NeuroVitals] [STEP 1] Starting frame extraction...")
-        frames = extract_frames_from_video(video_path, max_frames=450)
-        trace_log(f"[NeuroVitals] [STEP 1] Extracted {len(frames)} frames total.")
+        # --- 1. & 2. Streaming Frame extraction & ROI processing ---
+        trace_log("[NeuroVitals] [STEP 1&2] Starting streaming frame & ROI extraction...")
+        import cv2
+        cap = cv2.VideoCapture(video_path)
         
-        if not frames:
-            trace_log("[NeuroVitals] [STEP 1] FATAL ERROR: extract_frames_from_video returned 0 frames.")
-            raise HTTPException(status_code=400, detail="No frames found in video")
-
-        # --- 1.5 Automated Demographic Estimation (Consensus Voting) ---
-        if gender.lower() == "auto":
-            trace_log("[NeuroVitals] [STEP 1.5] Attempting temporal demographic consensus...")
-            # Sample 5 frames across the video for better accuracy
-            sample_indices = np.linspace(0, len(frames)-1, 5, dtype=int)
-            samples = []
-            
-            for idx in sample_indices:
-                res = _face_processor.estimate_demographics(frames[idx])
-                if res:
-                    samples.append(res)
-            
-            if samples:
-                # Majority vote for gender
-                genders = [s["gender"] for s in samples]
-                gender = max(set(genders), key=genders.count)
-                
-                # Median for age to reject outliers
-                ages = [s["age"] for s in samples]
-                age = int(np.median(ages))
-                
-                trace_log(f"[NeuroVitals] [STEP 1.5] Consensus Results -> Gender: {gender}, Age: {age} (from {len(samples)} samples)")
-            else:
-                trace_log("[NeuroVitals] [STEP 1.5] Demographic estimation failed, using defaults.")
-                gender = "other"
-                # Keep original age Form default if possible, or use 35
-
-
-        # --- 2. Face ROI extraction & Landmark Collection ---
-        trace_log("[NeuroVitals] [STEP 2] Initializing ROI extraction...")
-        roi_buffer = []
+        rgb_means_buffer = []
         landmarks_buffer = []  # For liveness tracking
+        demographic_samples = [] # Cache 5 frames for age/gender detection
+        best_roi = None         # Cache 1 ROI for identity verification
         
-        # We'll try to limit to 300 frames if it's too large, or just keep going
-        frames_to_process = frames[:300] if len(frames) > 300 else frames
-        trace_log(f"[NeuroVitals] [STEP 2] Processing {len(frames_to_process)} frames for ROI...")
-
+        # We'll limit to 300 frames to keep processing time reasonable
+        max_frames = 300
+        total_video_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_video_frames <= 0: total_video_frames = 300 # Fallback
+        
+        # Indices for demographic sampling (e.g., [0, 60, 120, 180, 240])
+        sample_indices = np.linspace(0, min(total_video_frames, max_frames)-1, 5, dtype=int)
+        middle_idx = min(total_video_frames, max_frames) // 2
+        
+        count = 0
         try:
-            for i, frame in enumerate(frames_to_process):
-                if i % 20 == 0:
-                    trace_log(f"[NeuroVitals] [STEP 2] ROI Frame {i}/{len(frames_to_process)}... Buffer size: {len(roi_buffer)}")
+            while cap.isOpened() and count < max_frames:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # --- Demographic Sampling ---
+                if gender.lower() == "auto" and count in sample_indices:
+                    demographic_samples.append(frame.copy())
 
-                # Use a very specific try-except here
+                # Process frame immediately
                 res_roi, res_lm = None, None
                 try:
-                    res_roi, res_lm = _face_processor.extract_roi_with_landmarks(frame)
+                    res_roi, res_lm = get_face_processor().extract_roi_with_landmarks(frame)
                 except Exception as sdk_e:
-                    trace_log(f"[NeuroVitals] [STEP 2] SDK Error at frame {i}: {sdk_e}")
+                    trace_log(f"[NeuroVitals] [STEP 2] SDK Error at frame {count}: {sdk_e}")
                 
                 if res_roi is not None:
-                    roi_buffer.append(res_roi)
+                    # Compute RGB mean immediately and store ONLY that (3 floats)
+                    from sdk.rppg_extractor import cv2_mean_rgb
+                    rgb_mean = cv2_mean_rgb(res_roi)
+                    rgb_means_buffer.append(rgb_mean)
                     landmarks_buffer.append(res_lm)
+                    
+                    # Store best ROI (middle of successful detections)
+                    if count >= middle_idx and best_roi is None:
+                        best_roi = res_roi.copy()
                 
-                # Manual memory check/hint
-                if i % 100 == 0:
+                # Explicitly delete frame and ROI to free memory
+                del frame
+                del res_roi
+                
+                count += 1
+                if count % 50 == 0:
+                    trace_log(f"[NeuroVitals] [STREAM] Processed {count} frames... Buffer: {len(rgb_means_buffer)}")
                     import gc
                     gc.collect()
 
-            trace_log(f"[NeuroVitals] [STEP 2] ROI extraction complete. Valid faces: {len(roi_buffer)}")
-        except Exception as loop_e:
-            trace_log(f"[NeuroVitals] [STEP 2] FATAL LOOP ERROR: {loop_e}")
+            cap.release()
+            trace_log(f"[NeuroVitals] [STEP 2] Streaming complete. Valid face frames: {len(rgb_means_buffer)}")
+        except Exception as stream_e:
+            cap.release()
+            trace_log(f"[NeuroVitals] [STEP 2] FATAL STREAM ERROR: {stream_e}")
             trace_log(traceback.format_exc())
-            raise HTTPException(status_code=500, detail="ROI pipeline failure")
+            raise HTTPException(status_code=500, detail="Streaming pipeline failure")
 
-        if len(roi_buffer) < 2:  # Reduced from 10 to 2 for extreme resiliency
-            trace_log(f"[NeuroVitals] [STEP 2] WARNING: Only {len(roi_buffer)} faces found. Proceeding with limited data.")
-            if len(roi_buffer) == 0:
-                raise HTTPException(status_code=400, detail="No face detected in video stream")
+        if len(rgb_means_buffer) < 2:
+            trace_log(f"[NeuroVitals] [STEP 2] ERROR: Only {len(rgb_means_buffer)} faces found.")
+            raise HTTPException(status_code=400, detail="No face detected in video stream")
+
+        # --- 2.5 Automated Demographic Estimation (Consensus Voting) ---
+        if gender.lower() == "auto":
+            trace_log("[NeuroVitals] [STEP 1.5] Attempting temporal demographic consensus...")
+            samples = []
+            for f in demographic_samples:
+                res = get_face_processor().estimate_demographics(f)
+                if res: samples.append(res)
+            
+            if samples:
+                genders = [s["gender"] for s in samples]
+                gender = max(set(genders), key=genders.count)
+                ages = [s["age"] for s in samples]
+                age = int(np.median(ages))
+                trace_log(f"[NeuroVitals] [STEP 1.5] Consensus Results -> Gender: {gender}, Age: {age}")
+            else:
+                trace_log("[NeuroVitals] [STEP 1.5] Demographic estimation failed, using defaults.")
+                gender = "other"
 
         # --- 3. rPPG signal extraction (CHROM) ---
-        trace_log("[NeuroVitals] [STEP 3] Running CHROM signal extraction...")
-        extraction_res = _rppg_extractor.extract(roi_buffer)
+        trace_log("[NeuroVitals] [STEP 3] Running CHROM signal extraction from means...")
+        rgb_means_arr = np.array(rgb_means_buffer)
+        extraction_res = get_rppg_extractor().extract_from_means(rgb_means_arr)
         
-        if isinstance(extraction_res, dict):
-            signal = extraction_res.get("pulse_signal", np.array([]))
-            r_ratio = extraction_res.get("r_ratio")
-            b_ratio = extraction_res.get("b_ratio")
-        else:
-            # Fallback for old RPPGExtractor versions
-            signal = extraction_res
-            r_ratio, b_ratio = None, None
+        signal = extraction_res.get("pulse_signal", np.array([]))
+        r_ratio = extraction_res.get("r_ratio")
+        b_ratio = extraction_res.get("b_ratio")
 
         trace_log(f"[NeuroVitals] [STEP 3] Signal extracted. Samples: {len(signal)}")
 
         # --- 4. Full feature extraction ---
-        trace_log("[NeuroVitals] [STEP 4] Computing clinical features (Morphology + Multi-channel)...")
+        trace_log("[NeuroVitals] [STEP 4] Computing clinical features...")
         features = extract_all_features(
             signal, 
             fs=30.0, 
@@ -312,20 +372,9 @@ def analyze_video(
             age=age
         )
         
-        # Clean up features: convert NaN to 0.0 for easier consumption if preferred, 
-        # but here we log them to see what's actually happening.
-        trace_log(f"[NeuroVitals] [STEP 4] RAW Features: {features}")
-        
-        # Explicitly check for HR
-        hr_val = features.get('heart_rate_bpm')
-        if hr_val is None or math.isnan(hr_val):
-            trace_log("[NeuroVitals] [STEP 4] WARNING: Heart rate is NaN (insufficient peaks)")
-        else:
-            trace_log(f"[NeuroVitals] [STEP 4] Heart Rate Detected: {hr_val:.2f} BPM")
-
         # --- 5. Bayesian mental health inference ---
         trace_log(f"[NeuroVitals] [STEP 5] Running Bayesian Inference (Age: {age}, Gender: {gender})...")
-        inference = _bayesian_engine.full_inference(features, age=age, gender=gender)
+        inference = get_bayesian_engine().full_inference(features, age=age, gender=gender)
         
         posteriors = inference["posteriors"]
         risk_class = inference["risk_class"]
@@ -333,13 +382,10 @@ def analyze_video(
 
         # --- 6. Identity & liveness ---
         trace_log("[NeuroVitals] [STEP 6] Running Identity Verification...")
-        # Liveness now uses the real landmarks sequence
-        liveness_score = _identity_verifier.track_liveness(landmarks_buffer)
+        liveness_score = get_identity_verifier().track_liveness(landmarks_buffer)
         trace_log(f"[NeuroVitals] [STEP 6] Blink-based Liveness: {liveness_score:.2f}")
 
         # Verification (Face Embedding)
-        # In a real system, we'd pass the best ROI to the embedder
-        best_roi = roi_buffer[len(roi_buffer)//2] if roi_buffer else None
         embedding_model = EmbeddingModel()
         embedding = embedding_model.embed(best_roi)
         # Placeholder verification against self
@@ -361,17 +407,17 @@ def analyze_video(
         )
 
         # --- 8. Signal Authenticity (LSTM Anomaly) ---
-        authenticity = _waveform_validator.validate_signal(signal)
+        authenticity = get_waveform_validator().validate_signal(signal)
         trace_log(f"[NeuroVitals] [STEP 8] Waveform Authenticity Score: {authenticity:.2f}")
 
         # --- 9. Clinical Result Mapping & Explainability ---
-        inference = _bayesian_engine.full_inference(features, age=age, gender=gender)
+        inference = get_bayesian_engine().full_inference(features, age=age, gender=gender)
         posteriors = inference["posteriors"]
         risk_class = inference["risk_class"]
         explainability_data = inference["explainability"]
 
         # --- 9.5 Mood Inference ---
-        mood_data = _mood_engine.infer_mood(features, age=age, gender=gender)
+        mood_data = get_mood_engine().infer_mood(features, age=age, gender=gender)
         trace_log(f"[NeuroVitals] [MOOD] Current State: {mood_data['MoodState']}")
 
         # --- 10. Confidence based on SQI ---
@@ -521,7 +567,7 @@ async def governance_report():
     In production this would use stored reference distributions and
     recent prediction logs.  Here we return a placeholder report.
     """
-    report = _governance_monitor.generate_report()
+    report = get_governance_monitor().generate_report()
 
     audit_governance(logger, {"action": "report_generated"})
 
