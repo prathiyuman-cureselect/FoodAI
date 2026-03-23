@@ -19,7 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # Install all Python deps (no torch needed — saves ~800MB)
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir --retries 5 --timeout 60 -r requirements.txt
 
 # ─── Stage 2: Runtime ──────────────────────────────────────────
 FROM python:3.11-slim
