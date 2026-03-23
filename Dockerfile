@@ -18,10 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# Install CPU-only PyTorch first (saves ~1.5 GB vs CUDA version)
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-
-# Install remaining deps (torch already satisfied, won't re-download CUDA version)
+# Install all Python deps (no torch needed — saves ~800MB)
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ─── Stage 2: Runtime ──────────────────────────────────────────
