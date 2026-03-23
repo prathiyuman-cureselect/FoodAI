@@ -3,9 +3,10 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# System deps for MediaPipe (OpenGL ES), OpenCV, and InsightFace
+# System deps for MediaPipe (OpenGL ES), OpenCV, InsightFace (needs g++ to compile)
 # Debian Bookworm uses libgl1/libgles2/libegl1 (not the old -mesa suffixed names)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
     libgl1 \
     libgles2 \
     libegl1 \
